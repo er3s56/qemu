@@ -16,6 +16,7 @@
 #include "hw/arm/armv7m.h"
 #include "hw/char/gd32_usart.h"
 #include "hw/misc/gd32_rcu.h"
+#include "hw/misc/gd32_fmc.h"
 #include "qom/object.h"
 
 #define TYPE_GD32C103_SOC "gd32c103-soc"
@@ -39,6 +40,9 @@ struct GD32C103State {
 
     /* RCU (Reset and Clock Unit) */
     GD32RcuState rcu;
+
+    /* FMC (Flash Memory Controller) */
+    GD32FmcState fmc;
 
     /* USART/UART peripherals: USART0, USART1, USART2, UART3, UART4 */
     GD32UsartState usart[GD32_NUM_USARTS];

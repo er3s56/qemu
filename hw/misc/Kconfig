@@ -105,6 +105,9 @@ config STM32L4X5_RCC
 config GD32_RCU
     bool
 
+config GD32_FMC
+    bool
+
 config MIPS_ITU
     bool
 

@@ -425,6 +425,7 @@ config GD32C103
     select ARM_V7M
     select GD32_USART
     select GD32_RCU
+    select GD32_FMC
     select UNIMP
 
 config XLNX_ZYNQMP_ARM
