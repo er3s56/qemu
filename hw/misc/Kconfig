@@ -108,6 +108,9 @@ config GD32_RCU
 config GD32_FMC
     bool
 
+config GD32_AFIO
+    bool
+
 config MIPS_ITU
     bool
 

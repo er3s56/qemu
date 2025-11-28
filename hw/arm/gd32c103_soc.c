@@ -68,6 +68,18 @@ static const int usart_irq[] = {
     GD32_UART4_IRQ
 };
 
+static const uint32_t gpio_addr[] = {
+    GD32_GPIOA_ADDR,
+    GD32_GPIOB_ADDR,
+    GD32_GPIOC_ADDR,
+    GD32_GPIOD_ADDR,
+    GD32_GPIOE_ADDR
+};
+
+static const char gpio_name[][8] = {
+    "GPIOA", "GPIOB", "GPIOC", "GPIOD", "GPIOE"
+};
+
 static void gd32c103_soc_initfn(Object *obj)
 {
     GD32C103State *s = GD32C103_SOC(obj);
@@ -81,6 +93,14 @@ static void gd32c103_soc_initfn(Object *obj)
 
     /* Initialize FMC (Flash Memory Controller) */
     object_initialize_child(obj, "fmc", &s->fmc, TYPE_GD32_FMC);
+
+    /* Initialize AFIO (Alternate Function I/O) */
+    object_initialize_child(obj, "afio", &s->afio, TYPE_GD32_AFIO);
+
+    /* Initialize GPIO ports */
+    for (i = 0; i < GD32_NUM_GPIOS; i++) {
+        object_initialize_child(obj, "gpio[*]", &s->gpio[i], TYPE_GD32_GPIO);
+    }
 
     /* Initialize USART/UART peripherals */
     for (i = 0; i < GD32_NUM_USARTS; i++) {
@@ -188,16 +208,30 @@ static void gd32c103_soc_realize(DeviceState *dev_soc, Error **errp)
     sysbus_mmio_map(SYS_BUS_DEVICE(&s->fmc), 0, GD32_FMC_ADDR);
 
     /*
+     * AFIO (Alternate Function I/O)
+     */
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->afio), errp)) {
+        return;
+    }
+    sysbus_mmio_map(SYS_BUS_DEVICE(&s->afio), 0, GD32_AFIO_ADDR);
+
+    /*
+     * GPIO Ports (GPIOA - GPIOE)
+     */
+    for (i = 0; i < GD32_NUM_GPIOS; i++) {
+        dev = DEVICE(&s->gpio[i]);
+        qdev_prop_set_string(dev, "name", gpio_name[i]);
+        if (!sysbus_realize(SYS_BUS_DEVICE(&s->gpio[i]), errp)) {
+            return;
+        }
+        sysbus_mmio_map(SYS_BUS_DEVICE(&s->gpio[i]), 0, gpio_addr[i]);
+    }
+
+    /*
      * Unimplemented Peripherals
      * These stubs prevent guest crashes when accessing unmapped regions
      */
-    create_unimplemented_device("gd32.afio",  GD32_AFIO_ADDR,  0x400);
     create_unimplemented_device("gd32.exti",  GD32_EXTI_ADDR,  0x400);
-    create_unimplemented_device("gd32.gpioa", GD32_GPIOA_ADDR, 0x400);
-    create_unimplemented_device("gd32.gpiob", GD32_GPIOB_ADDR, 0x400);
-    create_unimplemented_device("gd32.gpioc", GD32_GPIOC_ADDR, 0x400);
-    create_unimplemented_device("gd32.gpiod", GD32_GPIOD_ADDR, 0x400);
-    create_unimplemented_device("gd32.gpioe", GD32_GPIOE_ADDR, 0x400);
 }
 
 static void gd32c103_soc_class_init(ObjectClass *klass, void *data)

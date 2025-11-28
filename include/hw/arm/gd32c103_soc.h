@@ -17,6 +17,8 @@
 #include "hw/char/gd32_usart.h"
 #include "hw/misc/gd32_rcu.h"
 #include "hw/misc/gd32_fmc.h"
+#include "hw/misc/gd32_afio.h"
+#include "hw/gpio/gd32_gpio.h"
 #include "qom/object.h"
 
 #define TYPE_GD32C103_SOC "gd32c103-soc"
@@ -24,6 +26,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GD32C103State, GD32C103_SOC)
 
 /* Number of peripherals */
 #define GD32_NUM_USARTS 5   /* USART0, USART1, USART2, UART3, UART4 */
+#define GD32_NUM_GPIOS  5   /* GPIOA, GPIOB, GPIOC, GPIOD, GPIOE */
 
 /* Memory Map - GD32C103RBT6 */
 #define GD32_FLASH_BASE     0x08000000
@@ -43,6 +46,12 @@ struct GD32C103State {
 
     /* FMC (Flash Memory Controller) */
     GD32FmcState fmc;
+
+    /* AFIO (Alternate Function I/O) */
+    GD32AfioState afio;
+
+    /* GPIO ports: GPIOA, GPIOB, GPIOC, GPIOD, GPIOE */
+    GD32GpioState gpio[GD32_NUM_GPIOS];
 
     /* USART/UART peripherals: USART0, USART1, USART2, UART3, UART4 */
     GD32UsartState usart[GD32_NUM_USARTS];

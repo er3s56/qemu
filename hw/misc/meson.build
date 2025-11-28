@@ -109,6 +109,7 @@ system_ss.add(when: 'CONFIG_STM32L4X5_SYSCFG', if_true: files('stm32l4x5_syscfg.
 system_ss.add(when: 'CONFIG_STM32L4X5_RCC', if_true: files('stm32l4x5_rcc.c'))
 system_ss.add(when: 'CONFIG_GD32_RCU', if_true: files('gd32_rcu.c'))
 system_ss.add(when: 'CONFIG_GD32_FMC', if_true: files('gd32_fmc.c'))
+system_ss.add(when: 'CONFIG_GD32_AFIO', if_true: files('gd32_afio.c'))
 system_ss.add(when: 'CONFIG_MPS2_FPGAIO', if_true: files('mps2-fpgaio.c'))
 system_ss.add(when: 'CONFIG_MPS2_SCC', if_true: files('mps2-scc.c'))
 

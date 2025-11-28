@@ -426,6 +426,8 @@ config GD32C103
     select GD32_USART
     select GD32_RCU
     select GD32_FMC
+    select GD32_AFIO
+    select GD32_GPIO
     select UNIMP
 
 config XLNX_ZYNQMP_ARM
