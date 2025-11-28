@@ -76,6 +76,9 @@ static void gd32c103_soc_initfn(Object *obj)
     /* Initialize ARM Cortex-M4 core */
     object_initialize_child(obj, "armv7m", &s->armv7m, TYPE_ARMV7M);
 
+    /* Initialize RCU (Reset and Clock Unit) */
+    object_initialize_child(obj, "rcu", &s->rcu, TYPE_GD32_RCU);
+
     /* Initialize USART/UART peripherals */
     for (i = 0; i < GD32_NUM_USARTS; i++) {
         object_initialize_child(obj, "usart[*]", &s->usart[i], TYPE_GD32_USART);
@@ -161,10 +164,17 @@ static void gd32c103_soc_realize(DeviceState *dev_soc, Error **errp)
     }
 
     /*
+     * RCU (Reset and Clock Unit)
+     */
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->rcu), errp)) {
+        return;
+    }
+    sysbus_mmio_map(SYS_BUS_DEVICE(&s->rcu), 0, GD32_RCU_ADDR);
+
+    /*
      * Unimplemented Peripherals
      * These stubs prevent guest crashes when accessing unmapped regions
      */
-    create_unimplemented_device("gd32.rcu",   GD32_RCU_ADDR,   0x400);
     create_unimplemented_device("gd32.fmc",   GD32_FMC_ADDR,   0x400);
     create_unimplemented_device("gd32.afio",  GD32_AFIO_ADDR,  0x400);
     create_unimplemented_device("gd32.exti",  GD32_EXTI_ADDR,  0x400);

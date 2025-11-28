@@ -15,6 +15,7 @@
 
 #include "hw/arm/armv7m.h"
 #include "hw/char/gd32_usart.h"
+#include "hw/misc/gd32_rcu.h"
 #include "qom/object.h"
 
 #define TYPE_GD32C103_SOC "gd32c103-soc"
@@ -35,6 +36,9 @@ struct GD32C103State {
 
     /*< public >*/
     ARMv7MState armv7m;
+
+    /* RCU (Reset and Clock Unit) */
+    GD32RcuState rcu;
 
     /* USART/UART peripherals: USART0, USART1, USART2, UART3, UART4 */
     GD32UsartState usart[GD32_NUM_USARTS];
