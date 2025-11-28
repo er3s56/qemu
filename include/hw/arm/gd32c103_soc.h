@@ -1,0 +1,52 @@
+/*
+ * GD32C103 SoC Emulation
+ *
+ * Copyright (c) 2025 Your Company Name
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * GD32C103RBT6 Configuration:
+ * - CPU: Cortex-M4 with FPU
+ * - Flash: 128KB
+ * - SRAM: 32KB
+ */
+
+#ifndef HW_ARM_GD32C103_SOC_H
+#define HW_ARM_GD32C103_SOC_H
+
+#include "hw/arm/armv7m.h"
+#include "hw/char/gd32_usart.h"
+#include "qom/object.h"
+
+#define TYPE_GD32C103_SOC "gd32c103-soc"
+OBJECT_DECLARE_SIMPLE_TYPE(GD32C103State, GD32C103_SOC)
+
+/* Number of peripherals */
+#define GD32_NUM_USARTS 5   /* USART0, USART1, USART2, UART3, UART4 */
+
+/* Memory Map - GD32C103RBT6 */
+#define GD32_FLASH_BASE     0x08000000
+#define GD32_FLASH_SIZE     (128 * 1024)  /* 128KB for RBT6 variant */
+#define GD32_SRAM_BASE      0x20000000
+#define GD32_SRAM_SIZE      (32 * 1024)   /* 32KB */
+
+struct GD32C103State {
+    /*< private >*/
+    SysBusDevice parent_obj;
+
+    /*< public >*/
+    ARMv7MState armv7m;
+
+    /* USART/UART peripherals: USART0, USART1, USART2, UART3, UART4 */
+    GD32UsartState usart[GD32_NUM_USARTS];
+
+    /* Memory regions */
+    MemoryRegion flash;
+    MemoryRegion flash_alias;
+    MemoryRegion sram;
+
+    /* Clocks */
+    Clock *sysclk;
+    Clock *refclk;
+};
+
+#endif /* HW_ARM_GD32C103_SOC_H */
