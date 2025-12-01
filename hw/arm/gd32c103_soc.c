@@ -27,6 +27,9 @@
 #include "hw/misc/unimp.h"
 #include "hw/arm/boot.h"
 
+/* Main SYSCLK frequency: 120MHz (max for GD32C103) */
+#define GD32_SYSCLK_FRQ 120000000ULL
+
 /* USART/UART base addresses from gd32c10x.h */
 #define GD32_USART0_ADDR    0x40013800  /* APB2 */
 #define GD32_USART1_ADDR    0x40004400  /* APB1 */
@@ -51,6 +54,39 @@
 #define GD32_GPIOC_ADDR     0x40011000
 #define GD32_GPIOD_ADDR     0x40011400
 #define GD32_GPIOE_ADDR     0x40011800
+
+/* TIMER base addresses (from gd32c10x_timer.h) */
+#define GD32_TIMER0_ADDR    0x40012C00  /* APB2 - Advanced */
+#define GD32_TIMER1_ADDR    0x40000000  /* APB1 - General L0 */
+#define GD32_TIMER2_ADDR    0x40000400  /* APB1 - General L0 */
+#define GD32_TIMER3_ADDR    0x40000800  /* APB1 - General L0 */
+#define GD32_TIMER4_ADDR    0x40000C00  /* APB1 - General L0 */
+#define GD32_TIMER5_ADDR    0x40001000  /* APB1 - Basic */
+#define GD32_TIMER6_ADDR    0x40001400  /* APB1 - Basic */
+#define GD32_TIMER7_ADDR    0x40013400  /* APB2 - Advanced */
+#define GD32_TIMER8_ADDR    0x40014C00  /* APB2 - General L1 */
+#define GD32_TIMER9_ADDR    0x40015000  /* APB2 - General L2 */
+#define GD32_TIMER10_ADDR   0x40015400  /* APB2 - General L2 */
+#define GD32_TIMER11_ADDR   0x40001800  /* APB1 - General L1 */
+#define GD32_TIMER12_ADDR   0x40001C00  /* APB1 - General L2 */
+#define GD32_TIMER13_ADDR   0x40002000  /* APB1 - General L2 */
+
+/* TIMER IRQ numbers (from gd32c10x.h) */
+/* Note: Some timers share IRQ lines with TIMER0/TIMER7 */
+#define GD32_TIMER0_BRK_IRQ     24  /* TIMER0 break, shared with TIMER8 */
+#define GD32_TIMER0_UP_IRQ      25  /* TIMER0 update, shared with TIMER9 */
+#define GD32_TIMER0_TRG_CMT_IRQ 26  /* TIMER0 trigger/commutation, shared with TIMER10 */
+#define GD32_TIMER0_CH_IRQ      27  /* TIMER0 channel capture compare */
+#define GD32_TIMER1_IRQ         28
+#define GD32_TIMER2_IRQ         29
+#define GD32_TIMER3_IRQ         30
+#define GD32_TIMER4_IRQ         50
+#define GD32_TIMER5_IRQ         54
+#define GD32_TIMER6_IRQ         55
+#define GD32_TIMER7_BRK_IRQ     43  /* TIMER7 break, shared with TIMER11 */
+#define GD32_TIMER7_UP_IRQ      44  /* TIMER7 update, shared with TIMER12 */
+#define GD32_TIMER7_TRG_CMT_IRQ 45  /* TIMER7 trigger/commutation, shared with TIMER13 */
+#define GD32_TIMER7_CH_IRQ      46  /* TIMER7 channel capture compare */
 
 static const uint32_t usart_addr[] = {
     GD32_USART0_ADDR,
@@ -80,6 +116,56 @@ static const char gpio_name[][8] = {
     "GPIOA", "GPIOB", "GPIOC", "GPIOD", "GPIOE"
 };
 
+static const uint32_t timer_addr[] = {
+    GD32_TIMER0_ADDR,
+    GD32_TIMER1_ADDR,
+    GD32_TIMER2_ADDR,
+    GD32_TIMER3_ADDR,
+    GD32_TIMER4_ADDR,
+    GD32_TIMER5_ADDR,
+    GD32_TIMER6_ADDR,
+    GD32_TIMER7_ADDR,
+    GD32_TIMER8_ADDR,
+    GD32_TIMER9_ADDR,
+    GD32_TIMER10_ADDR,
+    GD32_TIMER11_ADDR,
+    GD32_TIMER12_ADDR,
+    GD32_TIMER13_ADDR
+};
+
+/*
+ * TIMER IRQ mapping:
+ * - TIMER0: Uses 4 separate IRQs (break, update, trigger/commutation, channel)
+ *           For simplicity, we use the update IRQ (25) as the main interrupt
+ * - TIMER7: Uses 4 separate IRQs (break, update, trigger/commutation, channel)
+ *           For simplicity, we use the update IRQ (44) as the main interrupt
+ * - TIMER8-10: Share IRQs with TIMER0 (24, 25, 26)
+ * - TIMER11-13: Share IRQs with TIMER7 (43, 44, 45)
+ * - TIMER1-6: Have dedicated IRQs
+ */
+static const int timer_irq[] = {
+    GD32_TIMER0_UP_IRQ,     /* TIMER0 - use update IRQ */
+    GD32_TIMER1_IRQ,        /* TIMER1 */
+    GD32_TIMER2_IRQ,        /* TIMER2 */
+    GD32_TIMER3_IRQ,        /* TIMER3 */
+    GD32_TIMER4_IRQ,        /* TIMER4 */
+    GD32_TIMER5_IRQ,        /* TIMER5 */
+    GD32_TIMER6_IRQ,        /* TIMER6 */
+    GD32_TIMER7_UP_IRQ,     /* TIMER7 - use update IRQ */
+    GD32_TIMER0_BRK_IRQ,    /* TIMER8 - shared with TIMER0 break */
+    GD32_TIMER0_UP_IRQ,     /* TIMER9 - shared with TIMER0 update */
+    GD32_TIMER0_TRG_CMT_IRQ,/* TIMER10 - shared with TIMER0 trigger */
+    GD32_TIMER7_BRK_IRQ,    /* TIMER11 - shared with TIMER7 break */
+    GD32_TIMER7_UP_IRQ,     /* TIMER12 - shared with TIMER7 update */
+    GD32_TIMER7_TRG_CMT_IRQ /* TIMER13 - shared with TIMER7 trigger */
+};
+
+static const char *timer_name[] = {
+    "TIMER0", "TIMER1", "TIMER2", "TIMER3", "TIMER4",
+    "TIMER5", "TIMER6", "TIMER7", "TIMER8", "TIMER9",
+    "TIMER10", "TIMER11", "TIMER12", "TIMER13"
+};
+
 static void gd32c103_soc_initfn(Object *obj)
 {
     GD32C103State *s = GD32C103_SOC(obj);
@@ -100,6 +186,11 @@ static void gd32c103_soc_initfn(Object *obj)
     /* Initialize GPIO ports */
     for (i = 0; i < GD32_NUM_GPIOS; i++) {
         object_initialize_child(obj, "gpio[*]", &s->gpio[i], TYPE_GD32_GPIO);
+    }
+
+    /* Initialize TIMER peripherals */
+    for (i = 0; i < GD32_NUM_TIMERS; i++) {
+        object_initialize_child(obj, "timer[*]", &s->timer[i], TYPE_GD32_TIMER);
     }
 
     /* Initialize USART/UART peripherals */
@@ -228,10 +319,27 @@ static void gd32c103_soc_realize(DeviceState *dev_soc, Error **errp)
     }
 
     /*
+     * TIMER Peripherals (TIMER0 - TIMER13)
+     */
+    for (i = 0; i < GD32_NUM_TIMERS; i++) {
+        dev = DEVICE(&s->timer[i]);
+        qdev_prop_set_string(dev, "name", timer_name[i]);
+        qdev_prop_set_uint64(dev, "clock-frequency", GD32_SYSCLK_FRQ);
+        if (!sysbus_realize(SYS_BUS_DEVICE(&s->timer[i]), errp)) {
+            return;
+        }
+        busdev = SYS_BUS_DEVICE(dev);
+        sysbus_mmio_map(busdev, 0, timer_addr[i]);
+        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, timer_irq[i]));
+    }
+
+    /*
      * Unimplemented Peripherals
      * These stubs prevent guest crashes when accessing unmapped regions
      */
     create_unimplemented_device("gd32.exti",  GD32_EXTI_ADDR,  0x400);
+    create_unimplemented_device("gd32.i2c0",  0x40005400,      0x400);
+    create_unimplemented_device("gd32.i2c1",  0x40005800,      0x400);
 }
 
 static void gd32c103_soc_class_init(ObjectClass *klass, void *data)
@@ -260,9 +368,6 @@ type_init(gd32c103_soc_types)
 /*
  * GD32C103RBT6 Machine Definition
  */
-
-/* Main SYSCLK frequency: 120MHz (max for GD32C103) */
-#define GD32_SYSCLK_FRQ 120000000ULL
 
 static void gd32c103rbt6_init(MachineState *machine)
 {

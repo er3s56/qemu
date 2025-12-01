@@ -19,6 +19,7 @@
 #include "hw/misc/gd32_fmc.h"
 #include "hw/misc/gd32_afio.h"
 #include "hw/gpio/gd32_gpio.h"
+#include "hw/timer/gd32_timer.h"
 #include "qom/object.h"
 
 #define TYPE_GD32C103_SOC "gd32c103-soc"
@@ -27,6 +28,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GD32C103State, GD32C103_SOC)
 /* Number of peripherals */
 #define GD32_NUM_USARTS 5   /* USART0, USART1, USART2, UART3, UART4 */
 #define GD32_NUM_GPIOS  5   /* GPIOA, GPIOB, GPIOC, GPIOD, GPIOE */
+#define GD32_NUM_TIMERS 14  /* TIMER0-13 */
 
 /* Memory Map - GD32C103RBT6 */
 #define GD32_FLASH_BASE     0x08000000
@@ -55,6 +57,9 @@ struct GD32C103State {
 
     /* USART/UART peripherals: USART0, USART1, USART2, UART3, UART4 */
     GD32UsartState usart[GD32_NUM_USARTS];
+
+    /* TIMER peripherals: TIMER0-13 */
+    GD32TimerState timer[GD32_NUM_TIMERS];
 
     /* Memory regions */
     MemoryRegion flash;
