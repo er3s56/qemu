@@ -430,6 +430,7 @@ config GD32C103
     select GD32_GPIO
     select GD32_TIMER
     select GD32_CAN
+    select GD32_I2C
     select UNIMP
 
 config XLNX_ZYNQMP_ARM

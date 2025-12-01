@@ -102,6 +102,14 @@
 #define GD32_CAN1_RX1_IRQ       65  /* CAN1 RX1 interrupt */
 #define GD32_CAN1_EWMC_IRQ      66  /* CAN1 EWMC interrupt */
 
+/* I2C base addresses and IRQ numbers (from gd32c10x.h) */
+#define GD32_I2C0_ADDR          0x40005400  /* APB1 */
+#define GD32_I2C1_ADDR          0x40005800  /* APB1 */
+#define GD32_I2C0_EV_IRQ        31  /* I2C0 event interrupt */
+#define GD32_I2C0_ER_IRQ        32  /* I2C0 error interrupt */
+#define GD32_I2C1_EV_IRQ        33  /* I2C1 event interrupt */
+#define GD32_I2C1_ER_IRQ        34  /* I2C1 error interrupt */
+
 static const uint32_t usart_addr[] = {
     GD32_USART0_ADDR,
     GD32_USART1_ADDR,
@@ -193,6 +201,19 @@ static const int can_irq[][4] = {
 
 static const char *can_name[] = { "CAN0", "CAN1" };
 
+static const uint32_t i2c_addr[] = {
+    GD32_I2C0_ADDR,
+    GD32_I2C1_ADDR
+};
+
+/* I2C IRQs: event, error (2 IRQs per controller) */
+static const int i2c_irq[][2] = {
+    { GD32_I2C0_EV_IRQ, GD32_I2C0_ER_IRQ },
+    { GD32_I2C1_EV_IRQ, GD32_I2C1_ER_IRQ }
+};
+
+static const char *i2c_name[] = { "I2C0", "I2C1" };
+
 static void gd32c103_soc_initfn(Object *obj)
 {
     GD32C103State *s = GD32C103_SOC(obj);
@@ -223,6 +244,11 @@ static void gd32c103_soc_initfn(Object *obj)
     /* Initialize CAN peripherals */
     for (i = 0; i < GD32_NUM_CANS; i++) {
         object_initialize_child(obj, "can[*]", &s->can[i], TYPE_GD32_CAN);
+    }
+
+    /* Initialize I2C peripherals */
+    for (i = 0; i < GD32_NUM_I2CS; i++) {
+        object_initialize_child(obj, "i2c[*]", &s->i2c[i], TYPE_GD32_I2C);
     }
 
     /* Initialize USART/UART peripherals */
@@ -390,12 +416,27 @@ static void gd32c103_soc_realize(DeviceState *dev_soc, Error **errp)
     }
 
     /*
+     * I2C Peripherals (I2C0, I2C1)
+     * Each I2C has 2 IRQ lines: event and error
+     */
+    for (i = 0; i < GD32_NUM_I2CS; i++) {
+        dev = DEVICE(&s->i2c[i]);
+        qdev_prop_set_string(dev, "name", i2c_name[i]);
+        if (!sysbus_realize(SYS_BUS_DEVICE(&s->i2c[i]), errp)) {
+            return;
+        }
+        busdev = SYS_BUS_DEVICE(dev);
+        sysbus_mmio_map(busdev, 0, i2c_addr[i]);
+        /* Connect 2 IRQ lines: event and error */
+        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, i2c_irq[i][0]));
+        sysbus_connect_irq(busdev, 1, qdev_get_gpio_in(armv7m, i2c_irq[i][1]));
+    }
+
+    /*
      * Unimplemented Peripherals
      * These stubs prevent guest crashes when accessing unmapped regions
      */
     create_unimplemented_device("gd32.exti",  GD32_EXTI_ADDR,  0x400);
-    create_unimplemented_device("gd32.i2c0",  0x40005400,      0x400);
-    create_unimplemented_device("gd32.i2c1",  0x40005800,      0x400);
 }
 
 static Property gd32c103_soc_properties[] = {

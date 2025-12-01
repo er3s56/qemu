@@ -21,6 +21,7 @@
 #include "hw/gpio/gd32_gpio.h"
 #include "hw/timer/gd32_timer.h"
 #include "hw/net/can/gd32_can.h"
+#include "hw/i2c/gd32_i2c.h"
 #include "net/can_emu.h"
 #include "qom/object.h"
 
@@ -32,6 +33,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GD32C103State, GD32C103_SOC)
 #define GD32_NUM_GPIOS  5   /* GPIOA, GPIOB, GPIOC, GPIOD, GPIOE */
 #define GD32_NUM_TIMERS 14  /* TIMER0-13 */
 #define GD32_NUM_CANS   2   /* CAN0, CAN1 */
+#define GD32_NUM_I2CS   2   /* I2C0, I2C1 */
 
 /* Memory Map - GD32C103RBT6 */
 #define GD32_FLASH_BASE     0x08000000
@@ -66,6 +68,9 @@ struct GD32C103State {
 
     /* CAN peripherals: CAN0, CAN1 */
     GD32CanState can[GD32_NUM_CANS];
+
+    /* I2C peripherals: I2C0, I2C1 */
+    GD32I2CState i2c[GD32_NUM_I2CS];
 
     /* Memory regions */
     MemoryRegion flash;
