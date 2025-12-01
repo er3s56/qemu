@@ -20,6 +20,8 @@
 #include "hw/misc/gd32_afio.h"
 #include "hw/gpio/gd32_gpio.h"
 #include "hw/timer/gd32_timer.h"
+#include "hw/net/can/gd32_can.h"
+#include "net/can_emu.h"
 #include "qom/object.h"
 
 #define TYPE_GD32C103_SOC "gd32c103-soc"
@@ -29,6 +31,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GD32C103State, GD32C103_SOC)
 #define GD32_NUM_USARTS 5   /* USART0, USART1, USART2, UART3, UART4 */
 #define GD32_NUM_GPIOS  5   /* GPIOA, GPIOB, GPIOC, GPIOD, GPIOE */
 #define GD32_NUM_TIMERS 14  /* TIMER0-13 */
+#define GD32_NUM_CANS   2   /* CAN0, CAN1 */
 
 /* Memory Map - GD32C103RBT6 */
 #define GD32_FLASH_BASE     0x08000000
@@ -61,6 +64,9 @@ struct GD32C103State {
     /* TIMER peripherals: TIMER0-13 */
     GD32TimerState timer[GD32_NUM_TIMERS];
 
+    /* CAN peripherals: CAN0, CAN1 */
+    GD32CanState can[GD32_NUM_CANS];
+
     /* Memory regions */
     MemoryRegion flash;
     MemoryRegion flash_alias;
@@ -69,6 +75,9 @@ struct GD32C103State {
     /* Clocks */
     Clock *sysclk;
     Clock *refclk;
+
+    /* CAN bus connections (optional, for SocketCAN integration) */
+    CanBusState *canbus[GD32_NUM_CANS];
 };
 
 #endif /* HW_ARM_GD32C103_SOC_H */

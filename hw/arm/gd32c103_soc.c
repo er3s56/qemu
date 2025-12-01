@@ -88,6 +88,20 @@
 #define GD32_TIMER7_TRG_CMT_IRQ 45  /* TIMER7 trigger/commutation, shared with TIMER13 */
 #define GD32_TIMER7_CH_IRQ      46  /* TIMER7 channel capture compare */
 
+/* CAN base addresses and IRQ numbers (from gd32c10x.h) */
+#define GD32_CAN0_ADDR          0x40006400  /* APB1 */
+#define GD32_CAN1_ADDR          0x40006800  /* APB1 */
+/* CAN0 IRQs */
+#define GD32_CAN0_TX_IRQ        19  /* CAN0 TX interrupt */
+#define GD32_CAN0_RX0_IRQ       20  /* CAN0 RX0 interrupt */
+#define GD32_CAN0_RX1_IRQ       21  /* CAN0 RX1 interrupt */
+#define GD32_CAN0_EWMC_IRQ      22  /* CAN0 EWMC (error/wakeup/mode change) interrupt */
+/* CAN1 IRQs */
+#define GD32_CAN1_TX_IRQ        63  /* CAN1 TX interrupt */
+#define GD32_CAN1_RX0_IRQ       64  /* CAN1 RX0 interrupt */
+#define GD32_CAN1_RX1_IRQ       65  /* CAN1 RX1 interrupt */
+#define GD32_CAN1_EWMC_IRQ      66  /* CAN1 EWMC interrupt */
+
 static const uint32_t usart_addr[] = {
     GD32_USART0_ADDR,
     GD32_USART1_ADDR,
@@ -166,6 +180,19 @@ static const char *timer_name[] = {
     "TIMER10", "TIMER11", "TIMER12", "TIMER13"
 };
 
+static const uint32_t can_addr[] = {
+    GD32_CAN0_ADDR,
+    GD32_CAN1_ADDR
+};
+
+/* CAN IRQs: TX, RX0, RX1, SCE (4 IRQs per controller) */
+static const int can_irq[][4] = {
+    { GD32_CAN0_TX_IRQ, GD32_CAN0_RX0_IRQ, GD32_CAN0_RX1_IRQ, GD32_CAN0_EWMC_IRQ },
+    { GD32_CAN1_TX_IRQ, GD32_CAN1_RX0_IRQ, GD32_CAN1_RX1_IRQ, GD32_CAN1_EWMC_IRQ }
+};
+
+static const char *can_name[] = { "CAN0", "CAN1" };
+
 static void gd32c103_soc_initfn(Object *obj)
 {
     GD32C103State *s = GD32C103_SOC(obj);
@@ -191,6 +218,11 @@ static void gd32c103_soc_initfn(Object *obj)
     /* Initialize TIMER peripherals */
     for (i = 0; i < GD32_NUM_TIMERS; i++) {
         object_initialize_child(obj, "timer[*]", &s->timer[i], TYPE_GD32_TIMER);
+    }
+
+    /* Initialize CAN peripherals */
+    for (i = 0; i < GD32_NUM_CANS; i++) {
+        object_initialize_child(obj, "can[*]", &s->can[i], TYPE_GD32_CAN);
     }
 
     /* Initialize USART/UART peripherals */
@@ -334,6 +366,30 @@ static void gd32c103_soc_realize(DeviceState *dev_soc, Error **errp)
     }
 
     /*
+     * CAN Peripherals (CAN0, CAN1)
+     * Each CAN has 4 IRQ lines: TX, RX0, RX1, SCE
+     */
+    for (i = 0; i < GD32_NUM_CANS; i++) {
+        dev = DEVICE(&s->can[i]);
+        qdev_prop_set_string(dev, "name", can_name[i]);
+        /* Connect to CAN bus if provided */
+        if (s->canbus[i]) {
+            object_property_set_link(OBJECT(&s->can[i]), "canbus",
+                                     OBJECT(s->canbus[i]), &error_abort);
+        }
+        if (!sysbus_realize(SYS_BUS_DEVICE(&s->can[i]), errp)) {
+            return;
+        }
+        busdev = SYS_BUS_DEVICE(dev);
+        sysbus_mmio_map(busdev, 0, can_addr[i]);
+        /* Connect 4 IRQ lines: TX, RX0, RX1, SCE */
+        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, can_irq[i][0]));
+        sysbus_connect_irq(busdev, 1, qdev_get_gpio_in(armv7m, can_irq[i][1]));
+        sysbus_connect_irq(busdev, 2, qdev_get_gpio_in(armv7m, can_irq[i][2]));
+        sysbus_connect_irq(busdev, 3, qdev_get_gpio_in(armv7m, can_irq[i][3]));
+    }
+
+    /*
      * Unimplemented Peripherals
      * These stubs prevent guest crashes when accessing unmapped regions
      */
@@ -342,12 +398,20 @@ static void gd32c103_soc_realize(DeviceState *dev_soc, Error **errp)
     create_unimplemented_device("gd32.i2c1",  0x40005800,      0x400);
 }
 
+static Property gd32c103_soc_properties[] = {
+    DEFINE_PROP_LINK("canbus0", GD32C103State, canbus[0], TYPE_CAN_BUS,
+                     CanBusState *),
+    DEFINE_PROP_LINK("canbus1", GD32C103State, canbus[1], TYPE_CAN_BUS,
+                     CanBusState *),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void gd32c103_soc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = gd32c103_soc_realize;
-    /* No vmstate or reset required: device has no internal state */
+    device_class_set_props(dc, gd32c103_soc_properties);
 }
 
 static const TypeInfo gd32c103_soc_info = {
@@ -369,20 +433,42 @@ type_init(gd32c103_soc_types)
  * GD32C103RBT6 Machine Definition
  */
 
+struct GD32C103RBT6MachineState {
+    MachineState parent;
+
+    GD32C103State soc;
+    CanBusState *canbus[GD32_NUM_CANS];
+};
+
+#define TYPE_GD32C103RBT6_MACHINE MACHINE_TYPE_NAME("gd32c103rbt6")
+OBJECT_DECLARE_SIMPLE_TYPE(GD32C103RBT6MachineState, GD32C103RBT6_MACHINE)
+
 static void gd32c103rbt6_init(MachineState *machine)
 {
+    GD32C103RBT6MachineState *s = GD32C103RBT6_MACHINE(machine);
     DeviceState *dev;
     Clock *sysclk;
+    int i;
 
     /* Create system clock (fixed frequency, no migration needed) */
     sysclk = clock_new(OBJECT(machine), "SYSCLK");
     clock_set_hz(sysclk, GD32_SYSCLK_FRQ);
 
     /* Create and configure SoC */
-    dev = qdev_new(TYPE_GD32C103_SOC);
-    object_property_add_child(OBJECT(machine), "soc", OBJECT(dev));
+    object_initialize_child(OBJECT(machine), "soc", &s->soc, TYPE_GD32C103_SOC);
+    dev = DEVICE(&s->soc);
     qdev_connect_clock_in(dev, "sysclk", sysclk);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+
+    /* Connect CAN buses if provided */
+    for (i = 0; i < GD32_NUM_CANS; i++) {
+        if (s->canbus[i]) {
+            g_autofree char *bus_name = g_strdup_printf("canbus%d", i);
+            object_property_set_link(OBJECT(&s->soc), bus_name,
+                                     OBJECT(s->canbus[i]), &error_abort);
+        }
+    }
+
+    sysbus_realize(SYS_BUS_DEVICE(&s->soc), &error_fatal);
 
     /* Load kernel/firmware if provided */
     armv7m_load_kernel(ARM_CPU(first_cpu),
@@ -390,12 +476,26 @@ static void gd32c103rbt6_init(MachineState *machine)
                        0, GD32_FLASH_SIZE);
 }
 
-static void gd32c103rbt6_machine_init(MachineClass *mc)
+static void gd32c103rbt6_machine_instance_init(Object *obj)
+{
+    GD32C103RBT6MachineState *s = GD32C103RBT6_MACHINE(obj);
+
+    /* Add CAN bus links for SocketCAN integration */
+    object_property_add_link(obj, "canbus0", TYPE_CAN_BUS,
+                             (Object **)&s->canbus[0],
+                             object_property_allow_set_link, 0);
+    object_property_add_link(obj, "canbus1", TYPE_CAN_BUS,
+                             (Object **)&s->canbus[1],
+                             object_property_allow_set_link, 0);
+}
+
+static void gd32c103rbt6_machine_class_init(ObjectClass *oc, void *data)
 {
     static const char * const valid_cpu_types[] = {
         ARM_CPU_TYPE_NAME("cortex-m4"),
         NULL
     };
+    MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->desc = "GigaDevice GD32C103RBT6 (Cortex-M4)";
     mc->init = gd32c103rbt6_init;
@@ -403,4 +503,17 @@ static void gd32c103rbt6_machine_init(MachineClass *mc)
     mc->default_ram_size = 0;  /* SRAM is part of SoC, not machine RAM */
 }
 
-DEFINE_MACHINE("gd32c103rbt6", gd32c103rbt6_machine_init)
+static const TypeInfo gd32c103rbt6_machine_type = {
+    .name = TYPE_GD32C103RBT6_MACHINE,
+    .parent = TYPE_MACHINE,
+    .instance_size = sizeof(GD32C103RBT6MachineState),
+    .instance_init = gd32c103rbt6_machine_instance_init,
+    .class_init = gd32c103rbt6_machine_class_init,
+};
+
+static void gd32c103rbt6_machine_register_types(void)
+{
+    type_register_static(&gd32c103rbt6_machine_type);
+}
+
+type_init(gd32c103rbt6_machine_register_types)
