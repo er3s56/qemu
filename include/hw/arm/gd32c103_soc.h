@@ -22,6 +22,7 @@
 #include "hw/timer/gd32_timer.h"
 #include "hw/net/can/gd32_can.h"
 #include "hw/i2c/gd32_i2c.h"
+#include "hw/ssi/ad7792.h"
 #include "net/can_emu.h"
 #include "qom/object.h"
 
@@ -71,6 +72,9 @@ struct GD32C103State {
 
     /* I2C peripherals: I2C0, I2C1 */
     GD32I2CState i2c[GD32_NUM_I2CS];
+
+    /* External ADC (AD7792) - optional, for testing */
+    AD7792State ad7792;
 
     /* Memory regions */
     MemoryRegion flash;

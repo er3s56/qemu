@@ -431,6 +431,7 @@ config GD32C103
     select GD32_TIMER
     select GD32_CAN
     select GD32_I2C
+    select AD7792
     select UNIMP
 
 config XLNX_ZYNQMP_ARM
