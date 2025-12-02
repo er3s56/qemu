@@ -23,6 +23,7 @@
 #include "hw/qdev-clock.h"
 #include "hw/arm/gd32c103_soc.h"
 #include "hw/ssi/ad7792.h"
+#include "hw/misc/led.h"
 #include "hw/arm/boot.h"
 
 /* Main SYSCLK frequency: 120MHz (max for GD32C103) */
@@ -100,6 +101,33 @@ static void nj300aim301_0805_z_init(MachineState *machine)
      */
     qdev_connect_gpio_out_named(dev, "miso", 0,
                                 qdev_get_gpio_in(DEVICE(&s->soc.gpio[1]), 4));
+
+    /*
+     * Initialize LED devices
+     * NJ300 has 4 status LEDs, active low (lit when GPIO output is 0)
+     * - LOGO:  PA7 (GPIOA pin 7) - Blue
+     * - RUN:   PA5 (GPIOA pin 5) - Green
+     * - ACK:   PC3 (GPIOC pin 3) - Green
+     * - FAULT: PC1 (GPIOC pin 1) - Red
+     */
+    LEDState *led_logo = led_create_simple(OBJECT(machine),
+        GPIO_POLARITY_ACTIVE_LOW, LED_COLOR_BLUE, "LED-LOGO");
+    LEDState *led_run = led_create_simple(OBJECT(machine),
+        GPIO_POLARITY_ACTIVE_LOW, LED_COLOR_GREEN, "LED-RUN");
+    LEDState *led_ack = led_create_simple(OBJECT(machine),
+        GPIO_POLARITY_ACTIVE_LOW, LED_COLOR_GREEN, "LED-ACK");
+    LEDState *led_fault = led_create_simple(OBJECT(machine),
+        GPIO_POLARITY_ACTIVE_LOW, LED_COLOR_RED, "LED-FAULT");
+
+    /* Connect GPIO outputs to LED inputs */
+    qdev_connect_gpio_out(DEVICE(&s->soc.gpio[0]), 7,
+                          qdev_get_gpio_in(DEVICE(led_logo), 0));   /* PA7 */
+    qdev_connect_gpio_out(DEVICE(&s->soc.gpio[0]), 5,
+                          qdev_get_gpio_in(DEVICE(led_run), 0));    /* PA5 */
+    qdev_connect_gpio_out(DEVICE(&s->soc.gpio[2]), 3,
+                          qdev_get_gpio_in(DEVICE(led_ack), 0));    /* PC3 */
+    qdev_connect_gpio_out(DEVICE(&s->soc.gpio[2]), 1,
+                          qdev_get_gpio_in(DEVICE(led_fault), 0));  /* PC1 */
 
     /* Load kernel/firmware if provided */
     armv7m_load_kernel(ARM_CPU(first_cpu),

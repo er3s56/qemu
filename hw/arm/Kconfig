@@ -439,6 +439,7 @@ config NJ300AIM301_0805_Z
     depends on TCG && ARM
     select GD32C103
     select AD7792
+    select LED
 
 config XLNX_ZYNQMP_ARM
     bool
