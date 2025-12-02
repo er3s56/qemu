@@ -431,8 +431,14 @@ config GD32C103
     select GD32_TIMER
     select GD32_CAN
     select GD32_I2C
-    select AD7792
     select UNIMP
+
+config NJ300AIM301_0805_Z
+    bool
+    default y
+    depends on TCG && ARM
+    select GD32C103
+    select AD7792
 
 config XLNX_ZYNQMP_ARM
     bool

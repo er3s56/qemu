@@ -251,9 +251,6 @@ static void gd32c103_soc_initfn(Object *obj)
         object_initialize_child(obj, "i2c[*]", &s->i2c[i], TYPE_GD32_I2C);
     }
 
-    /* Initialize AD7792 external ADC (for testing) */
-    object_initialize_child(obj, "ad7792", &s->ad7792, TYPE_AD7792);
-
     /* Initialize USART/UART peripherals */
     for (i = 0; i < GD32_NUM_USARTS; i++) {
         object_initialize_child(obj, "usart[*]", &s->usart[i], TYPE_GD32_USART);
@@ -434,37 +431,6 @@ static void gd32c103_soc_realize(DeviceState *dev_soc, Error **errp)
         sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, i2c_irq[i][0]));
         sysbus_connect_irq(busdev, 1, qdev_get_gpio_in(armv7m, i2c_irq[i][1]));
     }
-
-    /*
-     * AD7792 External ADC (for testing GPIO bit-banging SPI)
-     * Connected to GPIOA: PA4=CS, PA5=CLK, PA6=MISO, PA7=MOSI
-     */
-    dev = DEVICE(&s->ad7792);
-    qdev_prop_set_string(dev, "name", "AD7792");
-    if (!qdev_realize(dev, NULL, errp)) {
-        return;
-    }
-
-    /*
-     * Connect GPIO outputs to AD7792 inputs:
-     * - PA4 (pin 4) -> CS
-     * - PA5 (pin 5) -> CLK
-     * - PA7 (pin 7) -> MOSI
-     */
-    qdev_connect_gpio_out(DEVICE(&s->gpio[0]), 4,
-                          qdev_get_gpio_in_named(dev, "cs", 0));
-    qdev_connect_gpio_out(DEVICE(&s->gpio[0]), 5,
-                          qdev_get_gpio_in_named(dev, "clk", 0));
-    qdev_connect_gpio_out(DEVICE(&s->gpio[0]), 7,
-                          qdev_get_gpio_in_named(dev, "mosi", 0));
-
-    /*
-     * Connect AD7792 MISO output to GPIO input:
-     * - AD7792 MISO -> PA6 (pin 6)
-     * Note: We use qdev_get_gpio_in() which connects to the GPIO's input handler
-     */
-    qdev_connect_gpio_out_named(dev, "miso", 0,
-                                qdev_get_gpio_in(DEVICE(&s->gpio[0]), 6));
 
     /*
      * Unimplemented Peripherals
