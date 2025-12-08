@@ -268,14 +268,38 @@ static void gd32_can_abort_transmit(GD32CanState *s, int mailbox)
 
 /*
  * Filter handling
+ *
+ * In GD32, all 28 filters are shared between CAN0 and CAN1, and all filter
+ * registers are accessed through CAN0's address space. The HBC1F field in
+ * FCTL register defines the boundary:
+ *   - CAN0 uses filters: 0 to (HBC1F - 1)
+ *   - CAN1 uses filters: HBC1F to 27
  */
 static bool gd32_can_filter_match(GD32CanState *s, const qemu_can_frame *frame,
                                    int *filter_idx, int *fifo_num)
 {
+    /* Get filter configuration from filter owner (CAN0) */
+    GD32CanState *fctl = s->filter_owner ? s->filter_owner : s;
+
     uint32_t can_id = frame->can_id;
     bool is_extended = (can_id & QEMU_CAN_EFF_FLAG) != 0;
     uint32_t id;
     int i;
+    int active_filters = 0;
+
+    /* Determine filter range based on CAN index and HBC1F */
+    int hbc1f = (fctl->fctl >> 8) & 0x3F;  /* Header bank of CAN1 filter */
+    int filter_start, filter_end;
+
+    if (s->can_index == 0) {
+        /* CAN0: uses filters 0 to (HBC1F - 1) */
+        filter_start = 0;
+        filter_end = hbc1f;
+    } else {
+        /* CAN1: uses filters HBC1F to 27 */
+        filter_start = hbc1f;
+        filter_end = GD32_CAN_NUM_FILTERS;
+    }
 
     if (is_extended) {
         id = can_id & QEMU_CAN_EFF_MASK;
@@ -283,16 +307,21 @@ static bool gd32_can_filter_match(GD32CanState *s, const qemu_can_frame *frame,
         id = can_id & QEMU_CAN_SFF_MASK;
     }
 
-    /* Check each enabled filter */
-    for (i = 0; i < GD32_CAN_NUM_FILTERS; i++) {
-        if (!(s->fw & (1 << i))) {
+    DB_PRINT("%s: filter check: raw_id=0x%x id=0x%x ext=%d fw=0x%x hbc1f=%d range=[%d,%d)\n",
+             s->name ? s->name : "CAN", can_id, id, is_extended, fctl->fw,
+             hbc1f, filter_start, filter_end);
+
+    /* Check each enabled filter in our range */
+    for (i = filter_start; i < filter_end; i++) {
+        if (!(fctl->fw & (1 << i))) {
             continue;  /* Filter not active */
         }
+        active_filters++;
 
-        bool is_32bit = (s->fscfg & (1 << i)) != 0;
-        bool is_list_mode = (s->fmcfg & (1 << i)) != 0;
-        uint32_t data0 = s->filters[i].data0;
-        uint32_t data1 = s->filters[i].data1;
+        bool is_32bit = (fctl->fscfg & (1 << i)) != 0;
+        bool is_list_mode = (fctl->fmcfg & (1 << i)) != 0;
+        uint32_t data0 = fctl->filters[i].data0;
+        uint32_t data1 = fctl->filters[i].data1;
         bool match = false;
 
         if (is_32bit) {
@@ -353,11 +382,15 @@ static bool gd32_can_filter_match(GD32CanState *s, const qemu_can_frame *frame,
 
         if (match) {
             *filter_idx = i;
-            *fifo_num = (s->fafifo & (1 << i)) ? 1 : 0;
+            *fifo_num = (fctl->fafifo & (1 << i)) ? 1 : 0;
+            DB_PRINT("%s: filter %d matched! fifo=%d\n",
+                     s->name ? s->name : "CAN", i, *fifo_num);
             return true;
         }
     }
 
+    DB_PRINT("%s: no filter matched (%d active filters in range)\n",
+             s->name ? s->name : "CAN", active_filters);
     return false;
 }
 
@@ -461,6 +494,8 @@ static bool gd32_can_can_receive(CanBusClientState *client)
 
     /* Cannot receive in init or sleep mode */
     if (s->init_mode || s->sleep_mode) {
+        DB_PRINT("%s: can_receive blocked (init=%d, sleep=%d)\n",
+                 s->name ? s->name : "CAN", s->init_mode, s->sleep_mode);
         return false;
     }
 
@@ -479,14 +514,27 @@ static ssize_t gd32_can_receive(CanBusClientState *client,
     int filter_idx, fifo_num;
 
     for (i = 0; i < frames_cnt; i++) {
+        DB_PRINT("%s: RX frame id=0x%x dlc=%d data=%02x %02x %02x %02x %02x %02x %02x %02x\n",
+                 s->name ? s->name : "CAN",
+                 frames[i].can_id, frames[i].can_dlc,
+                 frames[i].data[0], frames[i].data[1],
+                 frames[i].data[2], frames[i].data[3],
+                 frames[i].data[4], frames[i].data[5],
+                 frames[i].data[6], frames[i].data[7]);
+
         /* Silent mode: don't receive */
         if (s->bt & GD32_CAN_BT_SCMOD) {
+            DB_PRINT("%s: RX skipped (silent mode)\n", s->name ? s->name : "CAN");
             continue;
         }
 
         /* Check filters */
         if (gd32_can_filter_match(s, &frames[i], &filter_idx, &fifo_num)) {
+            DB_PRINT("%s: RX filter matched: filter=%d fifo=%d\n",
+                     s->name ? s->name : "CAN", filter_idx, fifo_num);
             gd32_can_receive_frame(s, &frames[i], filter_idx, fifo_num);
+        } else {
+            DB_PRINT("%s: RX filtered out (no match)\n", s->name ? s->name : "CAN");
         }
     }
 
@@ -1022,6 +1070,9 @@ static const VMStateDescription vmstate_gd32_can = {
 static Property gd32_can_properties[] = {
     DEFINE_PROP_LINK("canbus", GD32CanState, canbus, TYPE_CAN_BUS, CanBusState *),
     DEFINE_PROP_STRING("name", GD32CanState, name),
+    DEFINE_PROP_UINT8("can-index", GD32CanState, can_index, 0),
+    DEFINE_PROP_LINK("filter-owner", GD32CanState, filter_owner,
+                     TYPE_GD32_CAN, GD32CanState *),
     DEFINE_PROP_END_OF_LIST(),
 };
 

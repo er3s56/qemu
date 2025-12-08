@@ -251,13 +251,22 @@ struct GD32CanState {
     /* Receive FIFOs */
     GD32CanRxFifo rx_fifo[GD32_CAN_NUM_RX_FIFOS];
 
-    /* Filter registers */
+    /* Filter registers (shared, only CAN0 owns filters, CAN1 references CAN0)
+     * In GD32, all filter registers are accessed through CAN0's address space.
+     * CAN0 uses filters 0 to (HBC1F-1), CAN1 uses filters HBC1F to 27.
+     */
     uint32_t fctl;      /* Filter control */
     uint32_t fmcfg;     /* Filter mode configuration */
     uint32_t fscfg;     /* Filter scale configuration */
     uint32_t fafifo;    /* Filter associated FIFO */
     uint32_t fw;        /* Filter working */
     GD32CanFilter filters[GD32_CAN_NUM_FILTERS];
+
+    /* Pointer to filter owner (CAN0). NULL means this is CAN0 (filter owner) */
+    struct GD32CanState *filter_owner;
+
+    /* CAN controller index (0 or 1) */
+    uint8_t can_index;
 
     /* Internal state */
     bool init_mode;     /* In initialization mode */

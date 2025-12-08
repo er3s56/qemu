@@ -394,10 +394,20 @@ static void gd32c103_soc_realize(DeviceState *dev_soc, Error **errp)
     /*
      * CAN Peripherals (CAN0, CAN1)
      * Each CAN has 4 IRQ lines: TX, RX0, RX1, SCE
+     *
+     * In GD32, all 28 filters are shared between CAN0 and CAN1, and all filter
+     * registers are accessed through CAN0's address space. CAN1 uses CAN0's
+     * filter configuration for filter matching.
      */
     for (i = 0; i < GD32_NUM_CANS; i++) {
         dev = DEVICE(&s->can[i]);
         qdev_prop_set_string(dev, "name", can_name[i]);
+        qdev_prop_set_uint8(dev, "can-index", i);
+        /* CAN1 uses CAN0's filter configuration */
+        if (i == 1) {
+            object_property_set_link(OBJECT(&s->can[i]), "filter-owner",
+                                     OBJECT(&s->can[0]), &error_abort);
+        }
         /* Connect to CAN bus if provided */
         if (s->canbus[i]) {
             object_property_set_link(OBJECT(&s->can[i]), "canbus",
