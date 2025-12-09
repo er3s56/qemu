@@ -43,6 +43,9 @@ struct NJ300AIM301MachineState {
 
     /* Slot address (0-127), set via -machine slot-address=N */
     uint8_t slot_address;
+
+    /* Flash data file path for persistence (optional) */
+    char *flash_file;
 };
 
 #define TYPE_NJ300AIM301_0805_Z_MACHINE MACHINE_TYPE_NAME("nj300aim301-0805-z")
@@ -63,6 +66,11 @@ static void nj300aim301_0805_z_init(MachineState *machine)
     object_initialize_child(OBJECT(machine), "soc", &s->soc, TYPE_GD32C103_SOC);
     dev = DEVICE(&s->soc);
     qdev_connect_clock_in(dev, "sysclk", sysclk);
+
+    /* Set flash file for persistence if provided */
+    if (s->flash_file && s->flash_file[0] != '\0') {
+        qdev_prop_set_string(dev, "flash-file", s->flash_file);
+    }
 
     /* Connect CAN buses if provided */
     for (i = 0; i < GD32_NUM_CANS; i++) {
@@ -213,6 +221,29 @@ static void nj300aim301_slot_address_set(Object *obj, Visitor *v,
     s->slot_address = value;
 }
 
+static void nj300aim301_flash_file_get(Object *obj, Visitor *v,
+                                       const char *name, void *opaque,
+                                       Error **errp)
+{
+    NJ300AIM301MachineState *s = NJ300AIM301_0805_Z_MACHINE(obj);
+    char *value = s->flash_file;
+    visit_type_str(v, name, &value, errp);
+}
+
+static void nj300aim301_flash_file_set(Object *obj, Visitor *v,
+                                       const char *name, void *opaque,
+                                       Error **errp)
+{
+    NJ300AIM301MachineState *s = NJ300AIM301_0805_Z_MACHINE(obj);
+    char *value;
+
+    if (!visit_type_str(v, name, &value, errp)) {
+        return;
+    }
+    g_free(s->flash_file);
+    s->flash_file = value;
+}
+
 static void nj300aim301_0805_z_machine_class_init(ObjectClass *oc, void *data)
 {
     static const char * const valid_cpu_types[] = {
@@ -233,6 +264,14 @@ static void nj300aim301_0805_z_machine_class_init(ObjectClass *oc, void *data)
                               NULL, NULL);
     object_class_property_set_description(oc, "slot-address",
         "Module slot address (0-127), calculated as SW*15+MX");
+
+    /* Add flash-file property for Flash data persistence */
+    object_class_property_add(oc, "flash-file", "str",
+                              nj300aim301_flash_file_get,
+                              nj300aim301_flash_file_set,
+                              NULL, NULL);
+    object_class_property_set_description(oc, "flash-file",
+        "Path to Flash data file for persistence (optional)");
 }
 
 static const TypeInfo nj300aim301_0805_z_machine_type = {

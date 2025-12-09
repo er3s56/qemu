@@ -287,9 +287,21 @@ static void gd32c103_soc_realize(DeviceState *dev_soc, Error **errp)
     /*
      * Flash Memory
      * Main flash at 0x08000000, aliased to 0x00000000 for boot
+     *
+     * If flash_file is provided, use file-backed RAM for persistence.
+     * Otherwise, use regular RAM (data lost on exit).
      */
-    memory_region_init_rom(&s->flash, OBJECT(dev_soc), "gd32c103.flash",
-                           GD32_FLASH_SIZE, &error_fatal);
+    if (s->flash_file && s->flash_file[0] != '\0') {
+        /* File-backed RAM: changes are persisted to disk */
+        memory_region_init_ram_from_file(&s->flash, OBJECT(dev_soc),
+                                         "gd32c103.flash", GD32_FLASH_SIZE,
+                                         0, RAM_SHARED, s->flash_file,
+                                         false, &error_fatal);
+    } else {
+        /* Regular RAM: data lost on exit */
+        memory_region_init_ram(&s->flash, OBJECT(dev_soc), "gd32c103.flash",
+                               GD32_FLASH_SIZE, &error_fatal);
+    }
     memory_region_add_subregion(system_memory, GD32_FLASH_BASE, &s->flash);
 
     memory_region_init_alias(&s->flash_alias, OBJECT(dev_soc),
@@ -454,6 +466,7 @@ static Property gd32c103_soc_properties[] = {
                      CanBusState *),
     DEFINE_PROP_LINK("canbus1", GD32C103State, canbus[1], TYPE_CAN_BUS,
                      CanBusState *),
+    DEFINE_PROP_STRING("flash-file", GD32C103State, flash_file),
     DEFINE_PROP_END_OF_LIST(),
 };
 

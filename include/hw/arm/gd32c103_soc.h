@@ -83,6 +83,9 @@ struct GD32C103State {
 
     /* CAN bus connections (optional, for SocketCAN integration) */
     CanBusState *canbus[GD32_NUM_CANS];
+
+    /* Flash data file for persistence (optional) */
+    char *flash_file;
 };
 
 #endif /* HW_ARM_GD32C103_SOC_H */
