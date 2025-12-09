@@ -18,9 +18,11 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
+#include "qapi/visitor.h"
 #include "hw/boards.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-clock.h"
+#include "hw/irq.h"
 #include "hw/arm/gd32c103_soc.h"
 #include "hw/ssi/ad7792.h"
 #include "hw/misc/led.h"
@@ -38,6 +40,9 @@ struct NJ300AIM301MachineState {
     GD32C103State soc;
     AD7792State ad7792;
     CanBusState *canbus[GD32_NUM_CANS];
+
+    /* Slot address (0-127), set via -machine slot-address=N */
+    uint8_t slot_address;
 };
 
 #define TYPE_NJ300AIM301_0805_Z_MACHINE MACHINE_TYPE_NAME("nj300aim301-0805-z")
@@ -69,6 +74,37 @@ static void nj300aim301_0805_z_init(MachineState *machine)
     }
 
     sysbus_realize(SYS_BUS_DEVICE(&s->soc), &error_fatal);
+
+    /*
+     * Configure slot address GPIO inputs.
+     *
+     * The module address is calculated from 7 GPIO pins:
+     * MODULE_ADDR = (SW3<<2 | SW2<<1 | SW1) * 15 + (MX4<<3 | MX3<<2 | MX2<<1 | MX1)
+     *
+     * GPIO pin mapping for NJ300AIM301-0805-Z:
+     * - MX1: PB10 (GPIOB pin 10)
+     * - MX2: PB11 (GPIOB pin 11)
+     * - MX3: PC9  (GPIOC pin 9)
+     * - MX4: PC8  (GPIOC pin 8)
+     * - SW1: PC11 (GPIOC pin 11)
+     * - SW2: PC10 (GPIOC pin 10)
+     * - SW3: PD2  (GPIOD pin 2)
+     */
+    {
+        uint8_t sw = s->slot_address / 15;  /* 0-8 (uses SW1-SW3) */
+        uint8_t mx = s->slot_address % 15;  /* 0-14 (uses MX1-MX4) */
+
+        /* Set MX1-MX4 (lower nibble of slot address) */
+        qemu_set_irq(qdev_get_gpio_in(DEVICE(&s->soc.gpio[1]), 10), (mx >> 0) & 1);
+        qemu_set_irq(qdev_get_gpio_in(DEVICE(&s->soc.gpio[1]), 11), (mx >> 1) & 1);
+        qemu_set_irq(qdev_get_gpio_in(DEVICE(&s->soc.gpio[2]), 9),  (mx >> 2) & 1);
+        qemu_set_irq(qdev_get_gpio_in(DEVICE(&s->soc.gpio[2]), 8),  (mx >> 3) & 1);
+
+        /* Set SW1-SW3 (upper bits of slot address) */
+        qemu_set_irq(qdev_get_gpio_in(DEVICE(&s->soc.gpio[2]), 11), (sw >> 0) & 1);
+        qemu_set_irq(qdev_get_gpio_in(DEVICE(&s->soc.gpio[2]), 10), (sw >> 1) & 1);
+        qemu_set_irq(qdev_get_gpio_in(DEVICE(&s->soc.gpio[3]), 2),  (sw >> 2) & 1);
+    }
 
     /*
      * Initialize AD7792 External ADC
@@ -139,6 +175,9 @@ static void nj300aim301_0805_z_machine_instance_init(Object *obj)
 {
     NJ300AIM301MachineState *s = NJ300AIM301_0805_Z_MACHINE(obj);
 
+    /* Default slot address (can be overridden via -machine slot-address=N) */
+    s->slot_address = 0;
+
     /* Add CAN bus links for SocketCAN integration */
     object_property_add_link(obj, "canbus0", TYPE_CAN_BUS,
                              (Object **)&s->canbus[0],
@@ -146,6 +185,32 @@ static void nj300aim301_0805_z_machine_instance_init(Object *obj)
     object_property_add_link(obj, "canbus1", TYPE_CAN_BUS,
                              (Object **)&s->canbus[1],
                              object_property_allow_set_link, 0);
+}
+
+static void nj300aim301_slot_address_get(Object *obj, Visitor *v,
+                                         const char *name, void *opaque,
+                                         Error **errp)
+{
+    NJ300AIM301MachineState *s = NJ300AIM301_0805_Z_MACHINE(obj);
+    uint8_t value = s->slot_address;
+    visit_type_uint8(v, name, &value, errp);
+}
+
+static void nj300aim301_slot_address_set(Object *obj, Visitor *v,
+                                         const char *name, void *opaque,
+                                         Error **errp)
+{
+    NJ300AIM301MachineState *s = NJ300AIM301_0805_Z_MACHINE(obj);
+    uint8_t value;
+
+    if (!visit_type_uint8(v, name, &value, errp)) {
+        return;
+    }
+    if (value >= 128) {
+        error_setg(errp, "slot-address must be 0-127");
+        return;
+    }
+    s->slot_address = value;
 }
 
 static void nj300aim301_0805_z_machine_class_init(ObjectClass *oc, void *data)
@@ -160,6 +225,14 @@ static void nj300aim301_0805_z_machine_class_init(ObjectClass *oc, void *data)
     mc->init = nj300aim301_0805_z_init;
     mc->valid_cpu_types = valid_cpu_types;
     mc->default_ram_size = 0;  /* SRAM is part of SoC, not machine RAM */
+
+    /* Add slot-address property (0-127) for module address configuration */
+    object_class_property_add(oc, "slot-address", "uint8",
+                              nj300aim301_slot_address_get,
+                              nj300aim301_slot_address_set,
+                              NULL, NULL);
+    object_class_property_set_description(oc, "slot-address",
+        "Module slot address (0-127), calculated as SW*15+MX");
 }
 
 static const TypeInfo nj300aim301_0805_z_machine_type = {

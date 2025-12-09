@@ -211,7 +211,9 @@ static void gd32_gpio_reset(DeviceState *dev)
     s->lock = 0x00000000;
     s->spd = 0x00000000;
     s->lock_state = 0;
-    s->input = 0x0000;
+    /* Note: s->input is NOT cleared on reset because it represents
+     * external hardware signals (e.g., DIP switches, jumpers) that
+     * are not affected by MCU reset. */
 }
 
 static void gd32_gpio_init(Object *obj)
