@@ -40,7 +40,7 @@ static int ad7792_reg_size(uint8_t reg)
     case AD7792_REG_FS:
         return 2;
     case AD7792_REG_DATA:
-        return 3;  /* 24-bit data, but we use 16-bit mode */
+        return 2;  /* AD7792 is 16-bit ADC */
     default:
         return 1;
     }
@@ -99,8 +99,6 @@ static uint32_t ad7792_read_reg(AD7792State *s, uint8_t reg)
         /* Read ADC data for selected channel */
         channel = s->config & 0x7;
         if (channel < AD7792_NUM_CHANNELS) {
-            /* Read next value from file when data is read */
-            ad7792_read_csv_line(s);
             return s->adc_values[channel];
         }
         return 0;
@@ -161,6 +159,35 @@ static void ad7792_process_byte(AD7792State *s, uint8_t byte)
 
     switch (s->spi_state) {
     case AD7792_SPI_IDLE:
+        /*
+         * Check for continuation of previous read operation.
+         * If byte is 0xFF and we have pending read data, this is
+         * a data read phase (firmware uses separate write/read calls).
+         */
+        if (byte == 0xFF && s->pending_read) {
+            /* Continue reading from the pending register.
+             * At this point, byte pending_byte_count has just been read.
+             * We need to prepare the NEXT byte (pending_byte_count + 1). */
+            s->spi_state = AD7792_SPI_READ_DATA;
+            reg_value = ad7792_read_reg(s, s->pending_reg);
+            s->bytes_expected = ad7792_reg_size(s->pending_reg);
+
+            /* Increment first - we just finished reading this byte */
+            s->pending_byte_count++;
+            s->byte_count = 0;  /* Reset bit counter for new byte */
+
+            if (s->pending_byte_count < s->bytes_expected) {
+                /* Prepare next byte */
+                s->shift_out = (reg_value >> ((s->bytes_expected - 1 - s->pending_byte_count) * 8)) & 0xFF;
+            } else {
+                /* All bytes read */
+                s->pending_read = false;
+                s->pending_byte_count = 0;
+                s->shift_out = 0xFF;
+            }
+            break;
+        }
+
         /* This is the communication register byte */
         s->reg_addr = (byte >> 3) & 0x7;
         s->is_read = (byte >> 6) & 0x1;
@@ -168,12 +195,23 @@ static void ad7792_process_byte(AD7792State *s, uint8_t byte)
         s->bytes_expected = ad7792_reg_size(s->reg_addr);
 
         if (s->is_read) {
+            /* Mark pending read - actual data will be read in next SPI transaction */
+            s->pending_read = true;
+            s->pending_reg = s->reg_addr;
+            s->pending_byte_count = 0;  /* Start from first byte */
+
+            /* If reading DATA register, advance to next CSV line now */
+            if (s->reg_addr == AD7792_REG_DATA) {
+                ad7792_read_csv_line(s);
+            }
+
+            /* Also prepare data in case firmware reads in same transaction */
             s->spi_state = AD7792_SPI_READ_DATA;
-            /* Prepare first byte of register data */
             reg_value = ad7792_read_reg(s, s->reg_addr);
-            /* MSB first */
             s->shift_out = (reg_value >> ((s->bytes_expected - 1) * 8)) & 0xFF;
         } else {
+            s->pending_read = false;
+            s->pending_byte_count = 0;
             s->spi_state = AD7792_SPI_WRITE_DATA;
             s->data = 0;
         }
@@ -209,6 +247,7 @@ static void ad7792_process_byte(AD7792State *s, uint8_t byte)
 static void ad7792_cs_set(void *opaque, int line, int level)
 {
     AD7792State *s = AD7792(opaque);
+    uint32_t reg_value;
 
     s->cs = level;
 
@@ -220,6 +259,20 @@ static void ad7792_cs_set(void *opaque, int line, int level)
         s->shift_out = 0xFF;
         /* Set MISO high when deselected */
         qemu_set_irq(s->miso_irq, 1);
+    } else {
+        /* CS low: select chip */
+        s->bit_count = 0;
+        s->shift_in = 0;
+
+        /* If pending read, prepare MISO with data immediately */
+        if (s->pending_read) {
+            reg_value = ad7792_read_reg(s, s->pending_reg);
+            s->bytes_expected = ad7792_reg_size(s->pending_reg);
+            /* Use pending_byte_count to get correct byte */
+            s->shift_out = (reg_value >> ((s->bytes_expected - 1 - s->pending_byte_count) * 8)) & 0xFF;
+            /* Set first bit on MISO */
+            qemu_set_irq(s->miso_irq, (s->shift_out >> 7) & 1);
+        }
     }
 }
 
@@ -248,7 +301,7 @@ static void ad7792_clk_set(void *opaque, int line, int level)
             s->shift_in = 0;
         }
     } else if (old_clk && !level) {
-        /* Falling edge: update MISO */
+        /* Falling edge: update MISO for next bit (firmware reads on next rising edge) */
         int miso_bit = (s->shift_out >> (7 - s->bit_count)) & 1;
         qemu_set_irq(s->miso_irq, miso_bit);
     }
@@ -306,6 +359,29 @@ static void ad7792_realize(DeviceState *dev, Error **errp)
 
     /* Initialize GPIO output for MISO */
     qdev_init_gpio_out_named(dev, &s->miso_irq, "miso", 1);
+
+    /* Initialize registers to default values */
+    s->cs = 1;
+    s->clk = 0;
+    s->mosi = 0;
+    s->bit_count = 0;
+    s->shift_in = 0;
+    s->shift_out = 0xFF;
+    s->spi_state = AD7792_SPI_IDLE;
+    s->pending_read = false;
+    s->pending_reg = 0;
+    s->pending_byte_count = 0;
+    s->status = 0;
+    s->mode = 0x000A;
+    s->config = 0x0710;
+    s->data = 0;
+    s->id = AD7792_ID_VALUE;
+    s->io = 0;
+    s->offset = 0x8000;
+    s->fs = 0x5540;
+    s->adc_values[0] = 0x8000;
+    s->adc_values[1] = 0x8000;
+    s->adc_values[2] = 0x8000;
 
     /* Open data file if specified */
     if (s->datafile && s->datafile[0]) {

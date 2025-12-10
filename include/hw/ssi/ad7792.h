@@ -66,7 +66,7 @@
 #define AD7792_CH_AVDD      7   /* AVDD Monitor */
 
 /* ID Register value */
-#define AD7792_ID_VALUE     0x0B    /* AD7792 ID */
+#define AD7792_ID_VALUE     0x4A    /* AD7792 ID (16-bit mode) */
 
 /* Number of ADC channels */
 #define AD7792_NUM_CHANNELS 3
@@ -105,6 +105,9 @@ struct AD7792State {
     uint8_t is_read;        /* 1 = read operation */
     uint8_t byte_count;     /* Bytes transferred in current operation */
     uint8_t bytes_expected; /* Total bytes expected for current register */
+    bool pending_read;      /* Read command issued, waiting for data phase */
+    uint8_t pending_reg;    /* Register to read in pending read */
+    uint8_t pending_byte_count; /* Bytes already read in multi-byte pending read */
 
     /* AD7792 Registers */
     uint8_t status;         /* Status Register */

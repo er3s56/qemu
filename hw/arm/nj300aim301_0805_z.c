@@ -46,6 +46,9 @@ struct NJ300AIM301MachineState {
 
     /* Flash data file path for persistence (optional) */
     char *flash_file;
+
+    /* ADC data file path for AD7792 simulation (optional) */
+    char *adc_datafile;
 };
 
 #define TYPE_NJ300AIM301_0805_Z_MACHINE MACHINE_TYPE_NAME("nj300aim301-0805-z")
@@ -121,6 +124,9 @@ static void nj300aim301_0805_z_init(MachineState *machine)
     object_initialize_child(OBJECT(machine), "ad7792", &s->ad7792, TYPE_AD7792);
     dev = DEVICE(&s->ad7792);
     qdev_prop_set_string(dev, "name", "AD7792");
+    if (s->adc_datafile) {
+        qdev_prop_set_string(dev, "datafile", s->adc_datafile);
+    }
     if (!qdev_realize(dev, NULL, &error_fatal)) {
         return;
     }
@@ -244,6 +250,29 @@ static void nj300aim301_flash_file_set(Object *obj, Visitor *v,
     s->flash_file = value;
 }
 
+static void nj300aim301_adc_datafile_get(Object *obj, Visitor *v,
+                                         const char *name, void *opaque,
+                                         Error **errp)
+{
+    NJ300AIM301MachineState *s = NJ300AIM301_0805_Z_MACHINE(obj);
+    char *value = s->adc_datafile;
+    visit_type_str(v, name, &value, errp);
+}
+
+static void nj300aim301_adc_datafile_set(Object *obj, Visitor *v,
+                                         const char *name, void *opaque,
+                                         Error **errp)
+{
+    NJ300AIM301MachineState *s = NJ300AIM301_0805_Z_MACHINE(obj);
+    char *value;
+
+    if (!visit_type_str(v, name, &value, errp)) {
+        return;
+    }
+    g_free(s->adc_datafile);
+    s->adc_datafile = value;
+}
+
 static void nj300aim301_0805_z_machine_class_init(ObjectClass *oc, void *data)
 {
     static const char * const valid_cpu_types[] = {
@@ -272,6 +301,14 @@ static void nj300aim301_0805_z_machine_class_init(ObjectClass *oc, void *data)
                               NULL, NULL);
     object_class_property_set_description(oc, "flash-file",
         "Path to Flash data file for persistence (optional)");
+
+    /* Add adc-datafile property for AD7792 ADC simulation data */
+    object_class_property_add(oc, "adc-datafile", "str",
+                              nj300aim301_adc_datafile_get,
+                              nj300aim301_adc_datafile_set,
+                              NULL, NULL);
+    object_class_property_set_description(oc, "adc-datafile",
+        "Path to CSV file with ADC channel values (ch0,ch1,ch2,...)");
 }
 
 static const TypeInfo nj300aim301_0805_z_machine_type = {
